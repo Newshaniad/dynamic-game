@@ -1,80 +1,106 @@
-
-# streamlit_app.py
 import streamlit as st
-import matplotlib.pyplot as plt
+import random
+import time
+import pandas as pd
 
-# Game matrix
-game_matrix = {
-    ('A', 'X'): (4, 3),
-    ('A', 'Y'): (0, 0),
-    ('A', 'Z'): (1, 4),
-    ('B', 'X'): (0, 0),
-    ('B', 'Y'): (2, 1),
-    ('B', 'Z'): (0, 0)
-}
+st.set_page_config(page_title="2-Period Dynamic Game", layout="centered")
 
-st.set_page_config(page_title="2-Period Dynamic Game", page_icon="🎮")
+# Description
 st.title("🎮 2-Period Dynamic Game")
-
-# Game description
 st.markdown("""
-## Game Description
+Welcome to the 2-player, 2-period dynamic game simulation!
 
-Two players interact over 2 periods (T=2), playing the following stage game in each period:
+**Game structure:**
+- In each period, you and your partner will simultaneously choose actions.
+- The outcome depends on both choices.
+- After Round 1, you'll see the result and proceed to Round 2 with the same roles and same partner.
 
-|       | X     | Y     | Z     |
-|-------|-------|-------|-------|
-| **A** | 4,3   | 0,0   | 1,4   |
-| **B** | 0,0   | 2,1   | 0,0   |
-
-In the 2nd period both players know what is played in the 1st period and can condition their action on the 1st period’s outcome.  
-Suppose that players do not discount the 2nd period payoffs (discount rate = 0).
+**Payoff Matrix:**
+|         | X        | Y        | Z        |
+|---------|----------|----------|----------|
+| **A**   | (4, 3)   | (0, 0)   | (1, 4)   |
+| **B**   | (0, 0)   | (2, 1)   | (0, 0)   |
 """)
 
-# Player names
-p1_name = st.text_input("👤 Player 1 name:")
-p2_name = st.text_input("👤 Player 2 name:")
+# Simulate backend memory for names and roles (would be a DB in real usage)
+if "players" not in st.session_state:
+    st.session_state.players = []
 
-if p1_name and p2_name:
-    st.subheader("🔵 Period 1 Decisions")
-    col1, col2 = st.columns(2)
-    with col1:
-        p1_move_1 = st.selectbox("Player 1 chooses:", options=["A", "B"], key="p1_1")
-    with col2:
-        p2_move_1 = st.selectbox("Player 2 chooses:", options=["X", "Y", "Z"], key="p2_1")
+if "matched_pairs" not in st.session_state:
+    st.session_state.matched_pairs = []
 
-    if st.button("▶ Play Period 1"):
-        payoff1 = game_matrix[(p1_move_1, p2_move_1)]
-        st.success(f"🎯 Period 1 Outcome: P1 = {p1_move_1}, P2 = {p2_move_1} → Payoffs = {payoff1}")
+if "games" not in st.session_state:
+    st.session_state.games = {}
 
-        st.subheader("🟢 Period 2 Decisions (after observing Period 1)")
-        col3, col4 = st.columns(2)
-        with col3:
-            p1_move_2 = st.selectbox("Player 1 chooses:", options=["A", "B"], key="p1_2")
-        with col4:
-            p2_move_2 = st.selectbox("Player 2 chooses:", options=["X", "Y", "Z"], key="p2_2")
+# Collect name
+with st.form("name_form"):
+    name = st.text_input("👤 Enter your full name:")
+    submitted = st.form_submit_button("Submit")
 
-        if st.button("▶ Play Period 2"):
-            payoff2 = game_matrix[(p1_move_2, p2_move_2)]
-            total_p1 = payoff1[0] + payoff2[0]
-            total_p2 = payoff1[1] + payoff2[1]
+if submitted and name:
+    if name not in st.session_state.players:
+        st.session_state.players.append(name)
 
-            st.success(f"🎮 Period 2 Outcome: P1 = {p1_move_2}, P2 = {p2_move_2} → Payoffs = {payoff2}")
-            st.markdown("### 🏁 Final Total Payoffs")
-            st.markdown(f"- **{p1_name} (Player 1):** {payoff1[0]} + {payoff2[0]} = {total_p1}")
-            st.markdown(f"- **{p2_name} (Player 2):** {payoff1[1]} + {payoff2[1]} = {total_p2}")
+    # Try to match players in pairs
+    if len(st.session_state.players) % 2 == 0:
+        p1, p2 = st.session_state.players[-2:]
+        pair_id = f"{p1} vs {p2}"
+        st.session_state.matched_pairs.append((p1, p2))
+        st.session_state.games[pair_id] = {
+            "round1": {},
+            "round2": {},
+            "players": [p1, p2]
+        }
+        st.success(f"✅ Matched: {p1} is Player 1, {p2} is Player 2")
+    else:
+        st.info("⏳ Waiting for another player to join...")
 
-            # Bar chart
-            labels = ["P1-T1", "P2-T1", "P1-T2", "P2-T2"]
-            values = [payoff1[0], payoff1[1], payoff2[0], payoff2[1]]
-            colors = ['blue', 'orange', 'blue', 'orange']
+# If matched, let them play
+for pair in st.session_state.matched_pairs:
+    p1, p2 = pair
+    pair_id = f"{p1} vs {p2}"
 
-            fig, ax = plt.subplots()
-            bars = ax.bar(labels, values, color=colors)
-            for bar in bars:
-                yval = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2, yval + 0.2, f'{yval}', ha='center')
-            ax.set_ylim(0, max(values) + 2)
-            ax.set_ylabel("Payoff")
-            ax.set_title("Payoffs per Period")
-            st.pyplot(fig)
+    if name == p1 or name == p2:
+        role = "Player 1" if name == p1 else "Player 2"
+        st.subheader(f"🧑‍🤝‍🧑 {pair_id} — You are **{role}**")
+
+        # Round 1
+        if not st.session_state.games[pair_id]["round1"].get(name):
+            st.write("🎯 Period 1:")
+            move = st.radio("Choose your move:", ["A", "B"] if role == "Player 1" else ["X", "Y", "Z"], key=f"{name}_r1")
+            if st.button("Submit Round 1 move", key=f"{name}_r1_submit"):
+                st.session_state.games[pair_id]["round1"][name] = move
+                st.success(f"✅ {role} submitted move: {move}")
+                st.experimental_rerun()
+
+        # After both submitted in round 1
+        if len(st.session_state.games[pair_id]["round1"]) == 2:
+            move_p1 = st.session_state.games[pair_id]["round1"][p1]
+            move_p2 = st.session_state.games[pair_id]["round1"][p2]
+            payoff_matrix = {
+                ("A", "X"): (4, 3),
+                ("A", "Y"): (0, 0),
+                ("A", "Z"): (1, 4),
+                ("B", "X"): (0, 0),
+                ("B", "Y"): (2, 1),
+                ("B", "Z"): (0, 0)
+            }
+            payoffs = payoff_matrix.get((move_p1, move_p2), (0, 0))
+            st.info(f"🎯 Round 1 Outcome: {p1} chose {move_p1}, {p2} chose {move_p2}")
+            st.success(f"💰 Payoffs: {p1} = {payoffs[0]}, {p2} = {payoffs[1]}")
+
+            # Round 2
+            if not st.session_state.games[pair_id]["round2"].get(name):
+                st.write("🎯 Period 2:")
+                move2 = st.radio("Choose your move:", ["A", "B"] if role == "Player 1" else ["X", "Y", "Z"], key=f"{name}_r2")
+                if st.button("Submit Round 2 move", key=f"{name}_r2_submit"):
+                    st.session_state.games[pair_id]["round2"][name] = move2
+                    st.success(f"✅ {role} submitted move: {move2}")
+                    st.experimental_rerun()
+
+            if len(st.session_state.games[pair_id]["round2"]) == 2:
+                move2_p1 = st.session_state.games[pair_id]["round2"][p1]
+                move2_p2 = st.session_state.games[pair_id]["round2"][p2]
+                payoffs2 = payoff_matrix.get((move2_p1, move2_p2), (0, 0))
+                st.info(f"🎯 Round 2 Outcome: {p1} chose {move2_p1}, {p2} chose {move2_p2}")
+                st.success(f"💰 Payoffs: {p1} = {payoffs2[0]}, {p2} = {payoffs2[1]}")
